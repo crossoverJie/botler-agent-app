@@ -1,0 +1,12 @@
+{
+  "foods": {
+    "鸡蛋清": { "per": 33, "kcal": 17, "protein": 3.6, "fat": 0.1, "carb": 0.2, "fiber": 0 },
+    "鸡蛋(全蛋)": { "per": 50, "kcal": 72, "protein": 6.3, "fat": 4.8, "carb": 0.6, "fiber": 0 },
+    "牛奶": { "per": 100, "kcal": 62, "protein": 3.3, "fat": 3.5, "carb": 4.7, "fiber": 0 },
+    "燕麦": { "per": 100, "kcal": 375, "protein": 13.2, "fat": 7.5, "carb": 67.5, "fiber": 10.0 },
+    "番茄": { "per": 100, "kcal": 18, "protein": 0.9, "fat": 0.2, "carb": 3.9, "fiber": 1.0 },
+    "米饭": { "per": 100, "kcal": 116, "protein": 2.6, "fat": 0.3, "carb": 25.6, "fiber": 0.3 },
+    "鸡胸肉": { "per": 100, "kcal": 133, "protein": 19.4, "fat": 5.0, "carb": 2.5, "fiber": 0 }
+  },
+  "meals": {}
+}
