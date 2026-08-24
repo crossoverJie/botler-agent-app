@@ -2,7 +2,7 @@
 
 > 路由提示（botler-agent）：涉及「拉 / 上大号 / 上卫生间 / 排便」的记录或查询消息都属于本项目。
 
-> **这是开源模板（botler-agent-app）**：本目录只提供数据格式与约定示例，不含真实数据。示例文件以 `.sample.json` 结尾，仅供参照格式；`scripts/`（如 `build.py` / `now.py`）由使用者自行提供，本模板不包含脚本源码。
+> **这是开源模板（botler-agent-app）**：本目录只提供数据格式与约定示例，不含真实数据。示例文件以 `.sample.json` 结尾，仅供参照格式；`scripts/` 与 `web/`（前端源码）已随模板附带，构建产物（`dist/`、由 `build.py` 生成的 `*.html`）不提交，请用你自己的 `data/` 运行构建生成。部署目标（`INDEX_REPO` / `INDEX_URL`）通过环境变量配置，默认值见 `scripts/deploy.py`。
 
 本文件为 botler-agent 的 Agent 提供在本仓库工作的约定（botler 每次运行会加载它）。
 
