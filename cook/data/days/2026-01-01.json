@@ -1,0 +1,34 @@
+{
+  "date": "2026-01-01",
+  "calories": 759.0,
+  "protein": 43.2,
+  "fat": 22.4,
+  "carb": 98.0,
+  "fiber": 6.1,
+  "water": 1660,
+  "waters": [
+    { "type": "矿泉水", "amount": 830, "time": "08:20" },
+    { "type": "矿泉水", "amount": 830, "time": "14:05" }
+  ],
+  "note": "示例记录（合成数据，非真实）",
+  "meals": {
+    "早餐": {
+      "desc": "煮鸡蛋 + 牛奶 + 燕麦",
+      "time": "08:10",
+      "foods": [
+        { "name": "鸡蛋清", "amount": "99g", "calories": 51, "protein": 10.4, "fat": 0.3, "carb": 0.7, "fiber": 0 },
+        { "name": "牛奶", "amount": "250g", "calories": 155, "protein": 8.3, "fat": 8.8, "carb": 11.8, "fiber": 0 },
+        { "name": "燕麦", "amount": "40g", "calories": 150, "protein": 5.3, "fat": 3.0, "carb": 27.0, "fiber": 4.0 }
+      ]
+    },
+    "午餐": {
+      "desc": "番茄炒蛋 + 米饭",
+      "time": "12:30",
+      "foods": [
+        { "name": "番茄", "amount": "150g", "calories": 27, "protein": 1.4, "fat": 0.3, "carb": 5.8, "fiber": 1.5 },
+        { "name": "鸡蛋(全蛋)", "amount": "100g", "calories": 144, "protein": 12.6, "fat": 9.5, "carb": 1.5, "fiber": 0 },
+        { "name": "米饭", "amount": "200g", "calories": 232, "protein": 5.2, "fat": 0.5, "carb": 51.2, "fiber": 0.6 }
+      ]
+    }
+  }
+}

@@ -66,6 +66,7 @@ def merge_days():
     拒绝在坏数据上生成聚合。
     """
     files = sorted(glob.glob(os.path.join(DAYS_DIR, "*.json")))
+    files = [f for f in files if not f.endswith(".sample.json")]
     records = []
     if not files:
         warn("data/days/ 为空——聚合将置空(新项目首次运行属正常;若是有历史数据被清空,请用 git 恢复)。")

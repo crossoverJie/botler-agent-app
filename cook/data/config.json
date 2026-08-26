@@ -1,0 +1,19 @@
+{
+  "tdee": 2400,
+  "weightKg": 69,
+  "targets": {
+    "proteinPerKg": 1.8,
+    "fatMin": 20,
+    "fiberMin": 5,
+    "calorieDeficitPct": 20,
+    "waterMin": 1500,
+    "waterMax": 3000
+  },
+  "rice": {
+    "factor": 2.3,
+    "ratio": [0.7, 0.2, 0.1],
+    "days": 7,
+    "lunchCooked": 250,
+    "dinnerCooked": 200
+  }
+}

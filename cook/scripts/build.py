@@ -60,6 +60,7 @@ def merge_days():
     data/days/ 是唯一真相源；data/intake.json 只是 build.py 生成的聚合产物。
     """
     files = sorted(glob.glob(os.path.join(DAYS_DIR, "*.json")))
+    files = [f for f in files if not f.endswith(".sample.json")]
     if not files:
         fail("data/days/ 为空——请先完成迁移，拒绝生成空聚合以保护历史。")
     data = []
@@ -246,7 +247,8 @@ def write_file(path, content, dry_run=False):
 
 def inject_html(data, cfg, dry_run=False):
     if not os.path.exists(HTML):
-        fail(f"找不到模板文件：{HTML}")
+        warn(f"未找到 {HTML}，跳过 nutrition.html 注入（该模板可选；放入带 __DATA__/__CONFIG__ 标记的 nutrition.html 即可启用）。")
+        return
     with open(HTML, encoding="utf-8") as f:
         html = f.read()
     data_block = "const DATA = " + json.dumps(data, ensure_ascii=False, indent=2) + ";"
