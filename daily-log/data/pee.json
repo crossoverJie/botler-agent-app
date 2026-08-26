@@ -1,0 +1,18 @@
+{
+  "records": [
+    {
+      "startedAt": "2026-08-20T10:30:00+08:00",
+      "feeling": "normal",
+      "volume": "normal",
+      "color": "light",
+      "note": "示例记录（合成数据，非真实）"
+    },
+    {
+      "startedAt": "2026-08-21T09:45:00+08:00",
+      "feeling": "normal",
+      "volume": "normal",
+      "color": "pale",
+      "note": ""
+    }
+  ]
+}
