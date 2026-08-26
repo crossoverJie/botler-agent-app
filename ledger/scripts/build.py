@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""Ledger builder + validator (per-day source of truth).
+"""Ledger data pipeline: merge + validate + aggregate + text report.
 
 Source of truth: data/days/YYYY-MM-DD.json (one file per day). build.py merges
 all day files into the aggregate data/ledger.json, validates every record against
-data/meta.json (category tree / accounts / trip-tag registry), and emits a
-self-contained static dashboard to web/ledger.html (Python stdlib only).
+data/meta.json (category tree / accounts / trip-tag registry), and answers
+text --report queries so the agent does NOT need to read raw data files.
 
-For queries, use --report: it prints a text summary so the agent does NOT need
-to read raw data files (bounded tokens regardless of ledger size).
+The dashboard frontend (Vite + TypeScript + ECharts, in web/) is a SEPARATE
+build step (`make`), fed by data/ledger.json. This module never emits HTML.
 
 Usage:
-    python3 scripts/build.py                  # merge + validate + refresh dashboard + aggregate
+    python3 scripts/build.py                  # merge + validate + write aggregate
     python3 scripts/build.py --dry-run        # merge + validate only, no writes
     python3 scripts/build.py --report 本月    # text report: this month income/expense/balance
     python3 scripts/build.py --report 旅行:2026北京
     python3 scripts/build.py --report 分类:交通
     python3 scripts/build.py --report 最近5
     python3 scripts/build.py --report 总览
-    python3 scripts/build.py --report 付款人:女友      # 某付款人全部支出
-    python3 scripts/build.py --report 付款人           # 按付款人拆分全部支出
+    python3 scripts/build.py --report 付款人:女友      # 某付款人全部净支出
+    python3 scripts/build.py --report 付款人           # 按付款人拆分全部净支出
+    python3 scripts/build.py --aggregates-json        # machine-readable aggregates (for parity)
 """
 import argparse
 import glob
-import html
 import json
 import os
 import sys
@@ -33,7 +33,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DAYS_DIR = os.path.join(ROOT, "data", "days")
 LEDGER = os.path.join(ROOT, "data", "ledger.json")
 META = os.path.join(ROOT, "data", "meta.json")
-OUT = os.path.join(ROOT, "web", "ledger.html")
 
 BIG_AMOUNT_CENTS = 1000000  # single expense > ¥10000 => warning (possible extra zero)
 CURRENCY = "CNY"
@@ -122,8 +121,8 @@ def validate(records, meta):
         if not isinstance(amt, int) or isinstance(amt, bool) or amt <= 0:
             fail(f"{rid}:amount_cents 应为正整数分,实际为 {amt!r}(元→分应 ×100)。")
 
-        if r.get("type") not in ("expense", "income"):
-            fail(f"{rid}:type 应为 expense / income。")
+        if r.get("type") not in ("expense", "income", "refund"):
+            fail(f"{rid}:type 应为 expense / income / refund。")
 
         if not isinstance(r.get("date"), str) or len(r.get("date", "")) != 10:
             fail(f"{rid}:date 应为 YYYY-MM-DD。")
@@ -153,8 +152,18 @@ def validate(records, meta):
             if t.startswith("旅行:") and not t[3:].strip():
                 fail(f"{rid}:旅行标签缺少行程名,应为 旅行:<行程名>。")
 
-        if amt > BIG_AMOUNT_CENTS and r.get("type") == "expense":
+        if amt > BIG_AMOUNT_CENTS and r.get("type") in ("expense", "refund"):
             warn(f"{rid}:单笔 {amt / 100:.2f} 元超过 ¥10000,请确认未多写一个零。")
+
+    # 数据完整性提示:退款总额超过支出总额,通常说明记了退票但漏记原支出,
+    # 会导致净支出为负、储蓄率 >100%、分类金额为负。低成本的兜底,不阻断构建。
+    tot_exp = sum(r.get("amount_cents", 0) for r in records if r.get("type") == "expense")
+    tot_ref = sum(r.get("amount_cents", 0) for r in records if r.get("type") == "refund")
+    if tot_ref > tot_exp:
+        warn(
+            f"退款总额 ¥{tot_ref / 100:.2f} 超过支出总额 ¥{tot_exp / 100:.2f}:"
+            f"可能存在记了退票但漏记原支出的情况(退款的 category/tags/payer 应与原支出一致)。"
+        )
 
     return seen_ids
 
@@ -183,28 +192,51 @@ def fmt(cents):
     return f"{cents / 100:.2f}"
 
 
-def esc(s):
-    return html.escape(str(s), quote=False)
+# ================================================================ aggregates
+# 单一事实来源:render() 与原 run_report 各算一份聚合(储蓄率/月度趋势只在旧 render() 里)。
+# 现将所有聚合抽成纯函数,--aggregates-json 与 run_report 共用,消除双实现。
+# 口径基准 = run_report 现有可观测输出;render-only 项(储蓄率/月度趋势/二级分类 rollup/占比)
+# 只进 --aggregates-json,不回灌 --report。详见仓库方案文档。
 
 
-# ---------------------------------------------------------------- dashboard
+def _net_of(records, types):
+    """返回 (tot_expense, tot_refund, net) 仅含指定 type 集合的净额(分)。"""
+    exp = sum(r["amount_cents"] for r in records if r["type"] == "expense" and r["type"] in types)
+    ref = sum(r["amount_cents"] for r in records if r["type"] == "refund" and r["type"] in types)
+    return exp, ref, exp - ref
 
 
-def render(records):
+def compute_summary(records):
+    """总收入 / 净支出 / 退款 / 结余 / 储蓄率。储蓄率在 tot_inc==0 时返回 None。"""
     expenses = [r for r in records if r["type"] == "expense"]
     incomes = [r for r in records if r["type"] == "income"]
+    refunds = [r for r in records if r["type"] == "refund"]
     tot_exp = sum(r["amount_cents"] for r in expenses)
     tot_inc = sum(r["amount_cents"] for r in incomes)
-    balance = tot_inc - tot_exp
+    tot_ref = sum(r["amount_cents"] for r in refunds)
+    net_exp = tot_exp - tot_ref
+    balance = tot_inc - net_exp
     savings_rate = (balance / tot_inc * 100) if tot_inc else None
+    return {
+        "totalIncome": tot_inc,
+        "netExpense": net_exp,
+        "totalRefund": tot_ref,
+        "balance": balance,
+        "savingsRate": round(savings_rate, 2) if savings_rate is not None else None,
+    }
 
-    # --- 月度趋势 ---
+
+def compute_monthly(records):
+    """月度收支趋势:refund 作为负支出冲减当月;环比 prev 为 0 时显示 None。"""
     monthly = defaultdict(lambda: {"income": 0, "expense": 0})
     for r in records:
         m = r["date"][:7]
-        monthly[m][r["type"]] += r["amount_cents"]
+        if r["type"] == "refund":
+            monthly[m]["expense"] -= r["amount_cents"]
+        else:
+            monthly[m][r["type"]] += r["amount_cents"]
     months = sorted(monthly)
-    monthly_rows = []
+    rows = []
     for idx, m in enumerate(months):
         d = monthly[m]
         exp = d["expense"]
@@ -216,209 +248,221 @@ def render(records):
                 mom_exp = (exp - prev["expense"]) / prev["expense"] * 100
             if prev["income"]:
                 mom_inc = (inc - prev["income"]) / prev["income"] * 100
-        monthly_rows.append((m, inc, exp, inc - exp, mom_inc, mom_exp))
+        rows.append({
+            "month": m,
+            "income": inc,
+            "expense": exp,
+            "balance": inc - exp,
+            "momIncome": round(mom_inc, 2) if mom_inc is not None else None,
+            "momExpense": round(mom_exp, 2) if mom_exp is not None else None,
+        })
+    return rows
 
-    # --- 分类汇总(逐级 roll up)---
+
+def compute_categories(records):
+    """一级/二级分类净支出 rollup(退款作为负支出冲减);占比以全局 net_exp 为分母。"""
+    net_exp = _net_of(records, ("expense", "refund"))[2]
     top_tot = defaultdict(int)
     sub_tot = defaultdict(lambda: defaultdict(int))
-    for r in expenses:
+    for r in records:
+        if r["type"] not in ("expense", "refund"):
+            continue
+        sign = 1 if r["type"] == "expense" else -1
+        amt = r["amount_cents"] * sign
+        path = r["category"]
+        top_tot[path[0]] += amt
+        if len(path) > 1:
+            sub_tot[path[0]][path[1]] += amt
+    items = []
+    for top, amount in top_tot.items():
+        children = [
+            {"name": c, "amount": v}
+            for c, v in sorted(sub_tot[top].items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        items.append({
+            "name": top,
+            "amount": amount,
+            "pct": round(amount / net_exp * 100, 2) if net_exp else 0,
+            "children": children,
+        })
+    items.sort(key=lambda it: (-it["amount"], it["name"]))
+    return items
+
+
+def compute_income_categories(records):
+    """收入分类(一级/二级 rollup),占比以总收入为分母。"""
+    tot_inc = sum(r["amount_cents"] for r in records if r["type"] == "income")
+    top_tot = defaultdict(int)
+    sub_tot = defaultdict(lambda: defaultdict(int))
+    for r in records:
+        if r["type"] != "income":
+            continue
         path = r["category"]
         top_tot[path[0]] += r["amount_cents"]
         if len(path) > 1:
             sub_tot[path[0]][path[1]] += r["amount_cents"]
+    items = []
+    for top, amount in top_tot.items():
+        children = [
+            {"name": c, "amount": v}
+            for c, v in sorted(sub_tot[top].items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        items.append({
+            "name": top,
+            "amount": amount,
+            "pct": round(amount / tot_inc * 100, 2) if tot_inc else 0,
+            "children": children,
+        })
+    items.sort(key=lambda it: (-it["amount"], it["name"]))
+    return items
 
-    # --- 收入分类 ---
-    inc_top = defaultdict(int)
-    inc_sub = defaultdict(lambda: defaultdict(int))
-    for r in incomes:
-        path = r["category"]
-        inc_top[path[0]] += r["amount_cents"]
-        if len(path) > 1:
-            inc_sub[path[0]][path[1]] += r["amount_cents"]
 
-    # --- 标签/行程汇总 ---
-    trip_rows = []
+def compute_accounts(records):
+    """账户净支出(退款作为负支出冲减),占比以全局 net_exp 为分母。"""
+    net_exp = _net_of(records, ("expense", "refund"))[2]
+    acc_tot = defaultdict(int)
+    for r in records:
+        if r["type"] == "expense":
+            acc_tot[r["account"]] += r["amount_cents"]
+        elif r["type"] == "refund":
+            acc_tot[r["account"]] -= r["amount_cents"]
+    rows = [
+        {
+            "name": a,
+            "amount": v,
+            "pct": round(v / net_exp * 100, 2) if net_exp else 0,
+        }
+        for a, v in acc_tot.items()
+    ]
+    rows.sort(key=lambda it: (-it["amount"], it["name"]))
+    return rows
+
+
+def compute_payers(records):
+    """付款人净支出(退款作为负支出冲减),占比以全局 net_exp 为分母。"""
+    net_exp = _net_of(records, ("expense", "refund"))[2]
+    payer_tot = defaultdict(int)
+    for r in records:
+        if r["type"] == "expense":
+            payer_tot[r.get("payer", "我")] += r["amount_cents"]
+        elif r["type"] == "refund":
+            payer_tot[r.get("payer", "我")] -= r["amount_cents"]
+    rows = [
+        {
+            "name": p,
+            "amount": v,
+            "pct": round(v / net_exp * 100, 2) if net_exp else 0,
+        }
+        for p, v in payer_tot.items()
+    ]
+    rows.sort(key=lambda it: (-it["amount"], it["name"]))
+    return rows
+
+
+def compute_trips(records):
+    """行程拆解:天数=去重支出日期(refund 不计)、总花费、日均、按分类、按付款人。
+
+    一条记录可带多个 旅行: 标签,对其中每个行程都计入(与原 render 口径一致)。
+    income 不计入行程花费。
+    """
+    trip_tot = defaultdict(int)
     trip_days = defaultdict(set)
     trip_cats = defaultdict(lambda: defaultdict(int))
-    trip_tot = defaultdict(int)
-    for r in expenses:
+    trip_payers = defaultdict(lambda: defaultdict(int))
+    for r in records:
+        if r["type"] not in ("expense", "refund"):
+            continue
+        sign = 1 if r["type"] == "expense" else -1
+        amt = r["amount_cents"] * sign
         for t in (r.get("tags") or []):
             if not t.startswith("旅行:"):
                 continue
-            trip = t[3:]  # strip the "旅行:" prefix (3 chars)
-            trip_tot[trip] += r["amount_cents"]
-            trip_days[trip].add(r["date"])
-            if r["category"]:
-                trip_cats[trip][r["category"][0]] += r["amount_cents"]
-    for trip in sorted(trip_tot, key=lambda k: -trip_tot[k]):
+            trip = t[3:]
+            trip_tot[trip] += amt
+            if r["type"] == "expense":
+                trip_days[trip].add(r["date"])
+            if r.get("category"):
+                trip_cats[trip][r["category"][0]] += amt
+            trip_payers[trip][r.get("payer", "我")] += amt
+    rows = []
+    for trip in sorted(trip_tot, key=lambda k: (-trip_tot[k], k)):
         days = len(trip_days[trip])
-        avg = trip_tot[trip] / days if days else 0
-        cats = "、".join(f"{c} {fmt(v)}" for c, v in sorted(trip_cats[trip].items(), key=lambda kv: -kv[1]))
-        payer_tot = defaultdict(int)
-        for r in expenses:
-            if f"旅行:{trip}" in (r.get("tags") or []):
-                payer_tot[r.get("payer", "我")] += r["amount_cents"]
-        payers = "、".join(f"{p} {fmt(v)}" for p, v in sorted(payer_tot.items(), key=lambda kv: -kv[1]))
-        trip_rows.append((trip, days, avg, cats, payers))
+        total = trip_tot[trip]
+        avg = total / days if days else 0
+        cats = [
+            {"name": c, "amount": v}
+            for c, v in sorted(trip_cats[trip].items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        payers = [
+            {"name": p, "amount": v}
+            for p, v in sorted(trip_payers[trip].items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        rows.append({
+            "trip": trip,
+            "days": days,
+            "total": total,
+            "avg": round(avg, 2),
+            "categories": cats,
+            "payers": payers,
+        })
+    return rows
 
-    # --- 账户 ---
-    acc_tot = defaultdict(int)
-    for r in expenses:
-        acc_tot[r["account"]] += r["amount_cents"]
 
-    # --- 付款人 ---
-    payer_tot = defaultdict(int)
-    for r in expenses:
-        payer_tot[r.get("payer", "我")] += r["amount_cents"]
-
-    # --- 交易对象 Top-N ---
+def compute_payee_top(records, n=10):
+    """交易对象 Top-N:只统计有 payee 的支出/退款(退款作为负支出冲减)。"""
     payee_tot = defaultdict(int)
-    for r in expenses:
-        if r.get("payee"):
-            payee_tot[r["payee"]] += r["amount_cents"]
-    payee_top = sorted(payee_tot.items(), key=lambda kv: -kv[1])[:10]
-
-    # --- HTML ---
-    def card(label, value, sub=""):
-        sub_html = f'<div class="card-sub">{esc(sub)}</div>' if sub else ""
-        return (
-            f'<div class="card"><div class="card-label">{esc(label)}</div>'
-            f'<div class="card-value">¥{esc(value)}</div>'
-            f"{sub_html}</div>"
-        )
-
-    parts = [
-        "<!DOCTYPE html>",
-        '<html lang="zh-CN"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        "<title>记账仪表盘</title><style>",
-        "body{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;margin:0;background:#f5f6f8;color:#222}",
-        "header{padding:18px 24px;background:#fff;border-bottom:1px solid #e3e5e8}",
-        "h1{font-size:20px;margin:0}h1 small{color:#888;font-weight:normal}",
-        "main{padding:20px 24px;max-width:1100px;margin:0 auto}",
-        ".cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}",
-        ".card{background:#fff;border-radius:10px;padding:14px 18px;min-width:150px;box-shadow:0 1px 2px rgba(0,0,0,.06)}",
-        ".card-label{color:#888;font-size:12px}.card-value{font-size:22px;font-weight:600;margin-top:4px}",
-        ".card-sub{color:#999;font-size:12px;margin-top:2px}",
-        "h2{font-size:16px;margin:26px 0 10px}",
-        "table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06)}",
-        "th,td{padding:9px 12px;text-align:right;font-size:13px;border-bottom:1px solid #f0f1f3}",
-        "th:first-child,td:first-child{text-align:left}",
-        "th{background:#fafbfc;color:#555;font-weight:500}",
-        ".empty{padding:40px;text-align:center;color:#999;background:#fff;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06)}",
-        ".up{color:#e0563a}.down{color:#2a9d5f}",
-        "</style></head><body>",
-        "<header><h1>记账仪表盘 <small>single source of truth: data/days/</small></h1></header><main>",
+    for r in records:
+        if r["type"] not in ("expense", "refund"):
+            continue
+        if not r.get("payee"):
+            continue
+        sign = 1 if r["type"] == "expense" else -1
+        payee_tot[r["payee"]] += r["amount_cents"] * sign
+    return [
+        {"name": p, "amount": v}
+        for p, v in sorted(payee_tot.items(), key=lambda kv: (-kv[1], kv[0]))[:n]
     ]
 
-    if not records:
-        parts.append('<div class="empty">暂无流水记录。消费消息路由到本项目后,记录将出现在 data/days/。</div>')
-        parts.append("</main></body></html>")
-        return "\n".join(parts)
 
-    parts.append('<div class="cards">')
-    parts.append(card("总收入", fmt(tot_inc)))
-    parts.append(card("总支出", fmt(tot_exp)))
-    parts.append(card("结余", fmt(balance), "收入 − 支出"))
-    if savings_rate is not None:
-        parts.append(card("储蓄率", f"{savings_rate:.1f}%", "结余 / 收入"))
-    parts.append("</div>")
-
-    # 月度
-    parts.append("<h2>月度收支趋势</h2><table><tr><th>月份</th><th>收入</th><th>收入环比</th><th>支出</th><th>支出环比</th><th>结余</th></tr>")
-    for m, inc, exp, bal, mom_inc, mom_exp in monthly_rows:
-        def pct_cell(mom):
-            if mom is None:
-                return "—"
-            cls = "up" if mom > 0 else ("down" if mom < 0 else "")
-            return f'<span class="{cls}">{mom:+.1f}%</span>'
-        parts.append(
-            f"<tr><td>{esc(m)}</td><td>{fmt(inc)}</td><td>{pct_cell(mom_inc)}</td>"
-            f"<td>{fmt(exp)}</td><td>{pct_cell(mom_exp)}</td><td>{fmt(bal)}</td></tr>"
-        )
-    parts.append("</table>")
-
-    # 分类(支出)
-    parts.append("<h2>分类汇总(支出)</h2><table><tr><th>一级分类</th><th>金额</th><th>占比</th><th>二级明细</th></tr>")
-    for top, amt in sorted(top_tot.items(), key=lambda kv: -kv[1]):
-        pct = amt / tot_exp * 100 if tot_exp else 0
-        subs = "、".join(f"{c} {fmt(v)}" for c, v in sorted(sub_tot[top].items(), key=lambda kv: -kv[1]))
-        parts.append(f"<tr><td>{esc(top)}</td><td>{fmt(amt)}</td><td>{pct:.1f}%</td><td>{esc(subs)}</td></tr>")
-    parts.append("</table>")
-
-    # 分类(收入)
-    if inc_top:
-        parts.append("<h2>收入分类</h2><table><tr><th>一级分类</th><th>金额</th><th>占比</th><th>二级明细</th></tr>")
-        for top, amt in sorted(inc_top.items(), key=lambda kv: -kv[1]):
-            pct = amt / tot_inc * 100 if tot_inc else 0
-            subs = "、".join(f"{c} {fmt(v)}" for c, v in sorted(inc_sub[top].items(), key=lambda kv: -kv[1]))
-            parts.append(f"<tr><td>{esc(top)}</td><td>{fmt(amt)}</td><td>{pct:.1f}%</td><td>{esc(subs)}</td></tr>")
-        parts.append("</table>")
-
-    # 标签/行程
-    if trip_rows:
-        parts.append("<h2>行程汇总(按 旅行: 标签)</h2><table><tr><th>行程</th><th>天数</th><th>总花费</th><th>日均</th><th>分类明细</th><th>按付款人</th></tr>")
-        for trip, days, avg, cats, payers in trip_rows:
-            parts.append(f"<tr><td>{esc(trip)}</td><td>{days}</td><td>{fmt(trip_tot[trip])}</td><td>{fmt(avg)}</td><td>{esc(cats)}</td><td>{esc(payers)}</td></tr>")
-        parts.append("</table>")
-
-    # 账户
-    parts.append("<h2>账户支出占比</h2><table><tr><th>账户</th><th>支出</th><th>占比</th></tr>")
-    for acc, amt in sorted(acc_tot.items(), key=lambda kv: -kv[1]):
-        pct = amt / tot_exp * 100 if tot_exp else 0
-        parts.append(f"<tr><td>{esc(acc)}</td><td>{fmt(amt)}</td><td>{pct:.1f}%</td></tr>")
-    parts.append("</table>")
-
-    # 付款人(仅当存在多人付款时才展示,单人时不占版面)
-    if len(payer_tot) > 1:
-        parts.append("<h2>付款人支出占比</h2><table><tr><th>付款人</th><th>支出</th><th>占比</th></tr>")
-        for p, amt in sorted(payer_tot.items(), key=lambda kv: -kv[1]):
-            pct = amt / tot_exp * 100 if tot_exp else 0
-            parts.append(f"<tr><td>{esc(p)}</td><td>{fmt(amt)}</td><td>{pct:.1f}%</td></tr>")
-        parts.append("</table>")
-
-    # 交易对象
-    if payee_top:
-        parts.append("<h2>交易对象 Top-10</h2><table><tr><th>商户</th><th>金额</th></tr>")
-        for payee, amt in payee_top:
-            parts.append(f"<tr><td>{esc(payee)}</td><td>{fmt(amt)}</td></tr>")
-        parts.append("</table>")
-
-    parts.append("</main></body></html>")
-    return "\n".join(parts)
+def build_aggregates(records):
+    """聚合产物的规范结构,供 --aggregates-json 与前端 parity 对账共用。"""
+    return {
+        "empty": len(records) == 0,
+        "summary": compute_summary(records),
+        "monthly": compute_monthly(records),
+        "categories": compute_categories(records),
+        "incomeCategories": compute_income_categories(records),
+        "accounts": compute_accounts(records),
+        "payers": compute_payers(records),
+        "trips": compute_trips(records),
+        "payeeTop": compute_payee_top(records),
+    }
 
 
-def write_out(content, dry_run=False):
-    out_dir = os.path.dirname(OUT)
-    if dry_run:
-        print(f"[dry-run] 将写入 {OUT}")
-        return
-    os.makedirs(out_dir, exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as f:
-        f.write(content)
-
-
-# ---------------------------------------------------------------- report (query)
+# ================================================================ report (query)
 
 
 def _summarize_records(records, title):
     exp = [r for r in records if r["type"] == "expense"]
     inc = [r for r in records if r["type"] == "income"]
+    ref = [r for r in records if r["type"] == "refund"]
     tot_exp = sum(r["amount_cents"] for r in exp)
     tot_inc = sum(r["amount_cents"] for r in inc)
-    lines = [title, f"收入 ¥{fmt(tot_inc)} | 支出 ¥{fmt(tot_exp)} | 结余 ¥{fmt(tot_inc - tot_exp)}"]
-    if exp:
-        cat = defaultdict(int)
-        for r in exp:
-            cat[r["category"][0]] += r["amount_cents"]
-        top = "、".join(f"{c} ¥{fmt(v)}" for c, v in sorted(cat.items(), key=lambda kv: -kv[1])[:5])
+    tot_ref = sum(r["amount_cents"] for r in ref)
+    net_exp = tot_exp - tot_ref
+    s = compute_summary(records)
+    lines = [
+        title,
+        f"收入 ¥{fmt(s['totalIncome'])} | 净支出 ¥{fmt(s['netExpense'])} | 退款 ¥{fmt(s['totalRefund'])} | 结余 ¥{fmt(s['balance'])}",
+    ]
+    if exp or ref:
+        cats = compute_categories(records)
+        top = "、".join(f"{c['name']} ¥{fmt(c['amount'])}" for c in cats[:5])
         lines.append(f"支出分类 Top: {top}")
         # 付款人拆分:仅当存在多人付款时附加,避免单人数据噪音。
-        payers = defaultdict(int)
-        for r in exp:
-            payers[r.get("payer", "我")] += r["amount_cents"]
+        payers = compute_payers(records)
         if len(payers) > 1:
-            ps = "、".join(f"{p} ¥{fmt(v)}" for p, v in sorted(payers.items(), key=lambda kv: -kv[1]))
+            ps = "、".join(f"{p['name']} ¥{fmt(p['amount'])}" for p in payers)
             lines.append(f"按付款人: {ps}")
     return "\n".join(lines)
 
@@ -449,31 +493,32 @@ def run_report(records, meta, q):
     if q.startswith("旅行:"):
         trip = q[3:].strip()
         want = f"旅行:{trip}"
-        rs = [r for r in records if r["type"] == "expense" and want in (r.get("tags") or [])]
+        rs = [r for r in records if r["type"] in ("expense", "refund") and want in (r.get("tags") or [])]
         if not rs:
             return f"未找到行程 {trip} 的消费(检查标签是否 旅行:{trip})。"
-        days = len(set(r["date"] for r in rs))
-        tot = sum(r["amount_cents"] for r in rs)
-        cat = defaultdict(int)
-        for r in rs:
-            cat[r["category"][0]] += r["amount_cents"]
-        cats = "、".join(f"{c} ¥{fmt(v)}" for c, v in sorted(cat.items(), key=lambda kv: -kv[1]))
-        payer_tot = defaultdict(int)
-        for r in rs:
-            payer_tot[r.get("payer", "我")] += r["amount_cents"]
-        payers = "、".join(f"{p} ¥{fmt(v)}" for p, v in sorted(payer_tot.items(), key=lambda kv: -kv[1]))
-        return (f"行程「{trip}」: {len(rs)} 笔, 覆盖 {days} 天, 总花费 ¥{fmt(tot)}, 日均 ¥{tot / days / 100:.1f}\n"
+        hit = next((t for t in compute_trips(records) if t["trip"] == trip), None)
+        if hit is None:
+            return f"未找到行程 {trip} 的消费(检查标签是否 旅行:{trip})。"
+        days = hit["days"]
+        tot = hit["total"]
+        cats = "、".join(f"{c['name']} ¥{fmt(c['amount'])}" for c in hit["categories"])
+        payers = "、".join(f"{p['name']} ¥{fmt(p['amount'])}" for p in hit["payers"])
+        avg_yuan = (tot / days / 100) if days else 0
+        return (f"行程「{trip}」: {len(rs)} 笔, 覆盖 {days} 天, 总花费 ¥{fmt(tot)}, 日均 ¥{avg_yuan:.1f}\n"
                 f"按付款人: {payers}\n分类明细: {cats}")
 
     if q.startswith("分类"):
         rest = q[2:].lstrip(":：").strip()
-        rs = [r for r in records if r["type"] == "expense" and rest in r["category"]]
+        rs = [r for r in records if r["type"] in ("expense", "refund") and rest in r["category"]]
         if not rs:
             return f"未找到分类 {rest} 的支出。"
-        tot = sum(r["amount_cents"] for r in rs)
-        lines = [f"分类「{rest}」支出合计 ¥{fmt(tot)}({len(rs)} 笔)"]
+        tot = 0
+        for r in rs:
+            tot += r["amount_cents"] * (1 if r["type"] == "expense" else -1)
+        lines = [f"分类「{rest}」净支出 ¥{fmt(tot)}({len(rs)} 笔)"]
         for r in sorted(rs, key=lambda x: x["date"])[-10:]:
-            lines.append(f"  {r['date']} ¥{fmt(r['amount_cents'])} {r.get('note','')} {r.get('payee','')}")
+            sign = "" if r["type"] == "expense" else " (退)"
+            lines.append(f"  {r['date']} ¥{fmt(r['amount_cents'])}{sign} {r.get('note','')} {r.get('payee','')}")
         return "\n".join(lines)
 
     if q.startswith("最近"):
@@ -485,7 +530,7 @@ def run_report(records, meta, q):
         rs = sorted(records, key=lambda r: (r.get("date", ""), r.get("id", "")))[-n:][::-1]
         lines = [f"最近 {n} 笔:"]
         for r in rs:
-            kind = "收" if r["type"] == "income" else "支"
+            kind = "收" if r["type"] == "income" else ("退" if r["type"] == "refund" else "支")
             cat = "/".join(r["category"])
             payer = r.get("payer", "我")
             payer_tag = f" @{payer}" if payer != "我" else ""
@@ -494,22 +539,21 @@ def run_report(records, meta, q):
 
     if q.startswith("付款人") or q.startswith("payer"):
         rest = q.split(":", 1)[1].strip() if ":" in q else ""
-        rs = [r for r in records if r["type"] == "expense" and (rest == "" or r.get("payer", "我") == rest)]
+        rs = [r for r in records if r["type"] in ("expense", "refund") and (rest == "" or r.get("payer", "我") == rest)]
         if not rs:
             return f"未找到付款人 {rest or '全部'} 的支出(检查 payers 是否注册在 meta.json)。"
-        tot = sum(r["amount_cents"] for r in rs)
+        tot = 0
+        for r in rs:
+            tot += r["amount_cents"] * (1 if r["type"] == "expense" else -1)
         cat = defaultdict(int)
         for r in rs:
-            cat[r["category"][0]] += r["amount_cents"]
+            cat[r["category"][0]] += r["amount_cents"] * (1 if r["type"] == "expense" else -1)
         cats = "、".join(f"{c} ¥{fmt(v)}" for c, v in sorted(cat.items(), key=lambda kv: -kv[1])[:5])
-        return f"付款人「{rest or '全部'}」支出合计 ¥{fmt(tot)}({len(rs)} 笔)\n分类 Top: {cats}"
+        return f"付款人「{rest or '全部'}」净支出合计 ¥{fmt(tot)}({len(rs)} 笔)\n分类 Top: {cats}"
 
     if q.startswith("账户"):
-        acc = defaultdict(int)
-        for r in records:
-            if r["type"] == "expense":
-                acc[r["account"]] += r["amount_cents"]
-        return "账户支出:\n" + "\n".join(f"  {a} ¥{fmt(v)}" for a, v in sorted(acc.items(), key=lambda kv: -kv[1]))
+        acc = compute_accounts(records)
+        return "账户净支出:\n" + "\n".join(f"  {a['name']} ¥{fmt(a['amount'])}" for a in acc)
 
     return (
         "支持的 --report 查询:总览 / 本月 / 上月 / 今年 / 旅行:<行程名> / 分类:<分类名> / 最近<N> / 账户 / 付款人[:<名字>]\n"
@@ -518,24 +562,29 @@ def run_report(records, meta, q):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="记账:合并 data/days/ → 校验 → 仪表盘 / 文本报告。")
+    parser = argparse.ArgumentParser(description="记账数据管道:合并 data/days/ → 校验 → 聚合 → 文本报告。")
     parser.add_argument("--dry-run", action="store_true", help="仅校验,不写入文件。")
     parser.add_argument("--report", nargs="+", metavar="QUERY", help="文本查询报告(只读,不写文件),如:本月 / 旅行:2026北京 / 分类:交通 / 最近5")
+    parser.add_argument("--aggregates-json", action="store_true", help="输出规范聚合 JSON(供前端 parity 对账),不写文件")
     args = parser.parse_args()
 
     meta = load_meta()
     records = merge_days()
     validate(records, meta)
 
+    if args.aggregates_json:
+        print(json.dumps(build_aggregates(records), sort_keys=True, ensure_ascii=False, indent=2))
+        return
+
     if args.report:
         print(run_report(records, meta, " ".join(args.report)))
         return
 
     write_aggregate(records, dry_run=args.dry_run)
-    content = render(records)
-    write_out(content, dry_run=args.dry_run)
     n = len(records)
-    print(f"OK: {n} 条记录校验通过(合并自 data/days/),web/ledger.html {'将' if args.dry_run else '已'}刷新。")
+    verb = "将写入" if args.dry_run else "已写入"
+    print(f"OK: {n} 条记录校验通过(合并自 data/days/),聚合{verb} data/ledger.json。"
+          f"仪表盘需另跑 `make`(web/dist/index.html) 刷新。")
 
 
 if __name__ == "__main__":

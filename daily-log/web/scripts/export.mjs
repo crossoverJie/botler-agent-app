@@ -15,16 +15,20 @@ const defaultOutDir = resolve(repoRoot, 'exports');
 const VIEW_LABEL = { share: '分享卡片', dashboard: '仪表盘' };
 
 function parseArgs(argv) {
-  const out = { view: 'share', date: null, scale: 2, out: null };
+  const out = { view: 'share', date: null, scale: 2, out: null, dataset: 'poop' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--view') out.view = argv[++i];
     else if (a === '--date') out.date = argv[++i];
     else if (a === '--scale') out.scale = Number(argv[++i]) || 2;
     else if (a === '--out') out.out = argv[++i];
+    else if (a === '--dataset') out.dataset = argv[++i];
   }
   if (!VIEW_LABEL[out.view]) {
     throw new Error(`--view 必须是 share|dashboard，收到：${out.view}`);
+  }
+  if (out.dataset !== 'poop' && out.dataset !== 'pee') {
+    throw new Error(`--dataset 必须是 poop|pee，收到：${out.dataset}`);
   }
   if (!out.date) {
     const now = new Date();
@@ -59,7 +63,7 @@ async function launchBrowser() {
 
 function fileName(opts) {
   const safe = opts.date.replace(/[^\d-]/g, '');
-  return `poop-${safe}_${VIEW_LABEL[opts.view]}.png`;
+  return `${opts.dataset}-${safe}_${VIEW_LABEL[opts.view]}.png`;
 }
 
 async function main() {
@@ -68,7 +72,7 @@ async function main() {
     throw new Error(`找不到构建产物：${distFile}\n请先运行 python3 scripts/build.py。`);
   }
 
-  const fileUrl = `file://${distFile}?view=${opts.view}&date=${encodeURIComponent(opts.date)}&export=1`;
+  const fileUrl = `file://${distFile}?view=${opts.view}&date=${encodeURIComponent(opts.date)}&dataset=${opts.dataset}&export=1`;
 
   const { browser, engine } = await launchBrowser();
   console.log(`[export] 使用引擎：${engine}`);
@@ -87,8 +91,8 @@ async function main() {
   if (isShare) {
     await page.waitForSelector('.share-card', { timeout: 15000 });
   } else {
-    await page.waitForSelector('#app .summary', { timeout: 15000 });
-    await page.waitForSelector('.chart canvas', { timeout: 15000 }).catch(() => {});
+    await page.waitForSelector('.export-group .summary', { timeout: 15000 });
+    await page.waitForSelector('.export-group .chart canvas', { timeout: 15000 }).catch(() => {});
   }
   await page.waitForTimeout(400);
 

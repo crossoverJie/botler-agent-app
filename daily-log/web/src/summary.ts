@@ -1,15 +1,19 @@
 import { h, mount } from './utils/dom';
-import { totalCount, countLastDays, avgDurationSec, avgIntervalDays, latest } from './data';
-import { fmtDuration, relativeLabel } from './utils/date';
+import type { DatasetInstance, BaseRec } from './data';
+import { relativeLabel } from './utils/date';
 
-export function renderSummary(container: HTMLElement): void {
+/** 通用汇总卡片：总次数 / 近7天 / 近30天 / 最近一次 + 各数据集注入的额外卡（poop 平均时长+间隔，pee 平均尿量）。 */
+export function renderSummary(
+  container: HTMLElement,
+  dataset: DatasetInstance<BaseRec>,
+  extraStats: { label: string; value: string }[],
+): void {
   const items: { label: string; value: string }[] = [
-    { label: '总次数', value: String(totalCount()) },
-    { label: '近 7 天', value: String(countLastDays(7)) },
-    { label: '近 30 天', value: String(countLastDays(30)) },
-    { label: '平均时长', value: avgDurationSec() != null ? fmtDuration(avgDurationSec()!) : '—' },
-    { label: '平均间隔', value: avgIntervalDays() != null ? `${avgIntervalDays()!.toFixed(1)} 天` : '—' },
-    { label: '最近一次', value: latest() ? relativeLabel(latest()!.startedAt) : '—' },
+    { label: '总次数', value: String(dataset.totalCount()) },
+    { label: '近 7 天', value: String(dataset.countLastDays(7)) },
+    { label: '近 30 天', value: String(dataset.countLastDays(30)) },
+    { label: '最近一次', value: dataset.latest() ? relativeLabel(dataset.latest()!.startedAt) : '—' },
+    ...extraStats,
   ];
 
   mount(

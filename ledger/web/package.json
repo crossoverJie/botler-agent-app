@@ -1,0 +1,25 @@
+{
+  "name": "ledger-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "python3 ../scripts/build.py",
+    "dev": "vite",
+    "prebuild": "python3 ../scripts/build.py",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "parity": "tsx scripts/parity.ts"
+  },
+  "dependencies": {
+    "echarts": "^5.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.8",
+    "vite-plugin-singlefile": "^2.0.2"
+  }
+}
