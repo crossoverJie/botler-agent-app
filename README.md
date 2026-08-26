@@ -13,7 +13,7 @@ This repo contains the **format and conventions** of four data subprojects that 
 | `ledger/` | Personal accounting (per-day expense/income, categories, tags, payers) | `data/days/YYYY-MM-DD.json` + `data/meta.json` |
 | `travel/` | Travel events (text + photos + places; money stays in `ledger`) | `data/days/YYYY-MM-DD.json` + `data/cities.json` |
 
-Each folder has its own `AGENTS.md` describing the schema and the recording/query conventions botler-agent follows. Sample files are named `*.sample.json` so they are clearly not real data. Some folders also ship `CLAUDE.md` / `CODEBUDDY.md` as symlinks to `AGENTS.md`, so the same rules apply no matter which agent reads the project.
+Each folder has its own `AGENTS.md` describing the schema and the recording/query conventions botler-agent follows. Sample files are named `*.sample.json` so they are clearly not real data. The day-record example lives at `data/example-day.sample.json` (**outside** `data/days/`), so `build.py`'s `data/days/*.json` glob never picks it up; the other `*.sample.json` files (`config`, `foods`, `meta`, `poop`, `pee`, `cities`, …) are read by exact filename, never globbed — so the bundled samples never break the pipeline. Some folders also ship `CLAUDE.md` / `CODEBUDDY.md` as symlinks to `AGENTS.md`, so the same rules apply no matter which agent reads the project.
 
 ## How to use with botler-agent
 
