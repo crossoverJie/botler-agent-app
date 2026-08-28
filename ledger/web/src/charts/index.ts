@@ -37,6 +37,11 @@ export function resizeCharts(): void {
   for (const c of controllers) c.resize();
 }
 
+/** 切换金额屏蔽后,刷新所有图表的 tooltip / 坐标轴标签。 */
+export function updateCharts(): void {
+  for (const c of controllers) c.render();
+}
+
 export function resetCharts(): void {
   controllers.length = 0;
   initialized = false;

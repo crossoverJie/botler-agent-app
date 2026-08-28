@@ -3,12 +3,14 @@ import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { TripRow } from '../types';
-import { money, escHTML } from '../utils/format';
+import { money, axisMoney, escHTML } from '../utils/format';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 export interface ChartCtl {
   resize(): void;
+  /** 重新套用 option(切换金额屏蔽后刷新坐标轴/tooltip)。 */
+  render(): void;
 }
 
 export function initTrip(container: HTMLElement, trips: TripRow[]): ChartCtl {
@@ -20,7 +22,7 @@ export function initTrip(container: HTMLElement, trips: TripRow[]): ChartCtl {
         textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 'normal' },
       },
     });
-    return { resize: () => chart.resize() };
+    return { resize: () => chart.resize(), render: () => chart.resize() };
   }
   const tripNames = trips.map((t) => t.trip);
   // 收集所有一级分类作为堆叠系列
@@ -36,7 +38,7 @@ export function initTrip(container: HTMLElement, trips: TripRow[]): ChartCtl {
     }),
     itemStyle: { borderRadius: [0, 0, 0, 0] },
   }));
-  chart.setOption({
+  const option = {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -62,9 +64,10 @@ export function initTrip(container: HTMLElement, trips: TripRow[]): ChartCtl {
       name: '元',
       nameTextStyle: { color: '#94a3b8' },
       splitLine: { lineStyle: { color: '#eef2f7' } },
-      axisLabel: { color: '#94a3b8' },
+      axisLabel: { color: '#94a3b8', formatter: (v: number) => axisMoney(v) },
     },
     series,
-  });
-  return { resize: () => chart.resize() };
+  };
+  chart.setOption(option);
+  return { resize: () => chart.resize(), render: () => chart.setOption(option) };
 }

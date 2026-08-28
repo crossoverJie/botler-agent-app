@@ -9,6 +9,8 @@ echarts.use([PieChart, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 export interface ChartCtl {
   resize(): void;
+  /** 重新套用 option(切换金额屏蔽后刷新 tooltip/label)。 */
+  render(): void;
 }
 
 export function initCategoryDonut(container: HTMLElement, cats: CategoryNode[]): ChartCtl {
@@ -16,7 +18,7 @@ export function initCategoryDonut(container: HTMLElement, cats: CategoryNode[]):
   const data = cats
     .map((c) => ({ name: c.name, value: Math.max(c.amount, 0) }))
     .filter((d) => d.value > 0);
-  chart.setOption({
+  const option = {
     tooltip: {
       trigger: 'item',
       formatter: (p: { name: string; value: number; percent: number }) =>
@@ -33,6 +35,7 @@ export function initCategoryDonut(container: HTMLElement, cats: CategoryNode[]):
         itemStyle: { borderColor: '#fff', borderWidth: 2 },
       },
     ],
-  });
-  return { resize: () => chart.resize() };
+  };
+  chart.setOption(option);
+  return { resize: () => chart.resize(), render: () => chart.setOption(option) };
 }

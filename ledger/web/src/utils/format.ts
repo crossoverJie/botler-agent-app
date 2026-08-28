@@ -1,9 +1,15 @@
+import { state } from '../state';
+
+const MASK = '••••';
+
 export function money(cents: number): string {
+  if (state.masked) return '¥' + MASK;
   return '¥' + (cents / 100).toFixed(2);
 }
 
 /** Signed amount for net flows (refund shown as negative). */
 export function signedMoney(cents: number): string {
+  if (state.masked) return (cents < 0 ? '−¥' : '¥') + MASK;
   const s = (Math.abs(cents) / 100).toFixed(2);
   return (cents < 0 ? '−¥' : '¥') + s;
 }
@@ -14,6 +20,7 @@ export function pct(v: number): string {
 
 /** Compact money for axis labels (e.g. 1.2k). */
 export function axisMoney(cents: number): string {
+  if (state.masked) return MASK;
   const yuan = cents / 100;
   if (Math.abs(yuan) >= 10000) return (yuan / 10000).toFixed(1) + '万';
   if (Math.abs(yuan) >= 1000) return (yuan / 1000).toFixed(1) + 'k';

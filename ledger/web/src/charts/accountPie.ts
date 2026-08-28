@@ -9,6 +9,8 @@ echarts.use([PieChart, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 export interface ChartCtl {
   resize(): void;
+  /** 重新套用 option(切换金额屏蔽后刷新 tooltip/label)。 */
+  render(): void;
 }
 
 function donut(container: HTMLElement, items: NamedAmount[], emptyText: string): echarts.ECharts {
@@ -20,7 +22,7 @@ function donut(container: HTMLElement, items: NamedAmount[], emptyText: string):
     chart.setOption({ title: { text: emptyText, left: 'center', top: 'center', textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 'normal' } } });
     return chart;
   }
-  chart.setOption({
+  const option = {
     tooltip: {
       trigger: 'item',
       formatter: (p: { name: string; value: number; percent: number }) =>
@@ -37,7 +39,8 @@ function donut(container: HTMLElement, items: NamedAmount[], emptyText: string):
         itemStyle: { borderColor: '#fff', borderWidth: 2 },
       },
     ],
-  });
+  };
+  chart.setOption(option);
   return chart;
 }
 
@@ -53,5 +56,8 @@ export function initAccountPie(
   container.append(aEl, pEl);
   const aChart = donut(aEl, accounts, '暂无账户支出');
   const pChart = donut(pEl, payers, '单人付款');
-  return { resize: () => { aChart.resize(); pChart.resize(); } };
+  return {
+    resize: () => { aChart.resize(); pChart.resize(); },
+    render: () => { aChart.setOption(aChart.getOption()); pChart.setOption(pChart.getOption()); },
+  };
 }

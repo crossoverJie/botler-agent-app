@@ -6,6 +6,7 @@ let backdrop: HTMLElement | null = null;
 let panel: HTMLElement | null = null;
 let body: HTMLElement | null = null;
 let title: HTMLElement | null = null;
+let current: LedgerRecord | null = null;
 
 function ensureDom(): void {
   if (panel) return;
@@ -26,6 +27,7 @@ function row(label: string, value: string): HTMLElement {
 
 export function openDrawer(r: LedgerRecord): void {
   ensureDom();
+  current = r;
   if (title) title.textContent = `${r.date} · ${r.id}`;
   if (body) {
     mount(
@@ -50,8 +52,14 @@ export function openDrawer(r: LedgerRecord): void {
 export function closeDrawer(): void {
   backdrop?.classList.remove('show');
   panel?.classList.remove('show');
+  current = null;
 }
 
 export function isDrawerOpen(): boolean {
   return !!panel?.classList.contains('show');
+}
+
+/** 切换金额屏蔽时,若抽屉开着则按当前 masked 状态重绘金额。 */
+export function refreshDrawer(): void {
+  if (current) openDrawer(current);
 }

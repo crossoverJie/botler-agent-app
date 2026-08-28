@@ -101,6 +101,34 @@ header {
   background: var(--brand);
   color: #fff;
 }
+.mask-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 7px 14px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.mask-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.mask-btn.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+.mask-btn .mask-ico {
+  display: inline-flex;
+}
+.mask-btn.active .mask-ico {
+  color: #fff;
+}
 
 /* ---------- Tabs ---------- */
 .tabs {

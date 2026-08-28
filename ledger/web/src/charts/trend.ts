@@ -9,7 +9,7 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { MonthlyRow } from '../types';
-import { money, escHTML } from '../utils/format';
+import { money, axisMoney, escHTML } from '../utils/format';
 
 echarts.use([
   BarChart,
@@ -24,6 +24,8 @@ echarts.use([
 
 export interface ChartCtl {
   resize(): void;
+  /** 重新套用 option(切换金额屏蔽后刷新坐标轴/tooltip)。 */
+  render(): void;
 }
 
 export function initTrend(container: HTMLElement, rows: MonthlyRow[]): ChartCtl {
@@ -38,7 +40,7 @@ export function initTrend(container: HTMLElement, rows: MonthlyRow[]): ChartCtl 
   const n = months.length;
   const startPct = n > 12 ? ((n - 12) / n) * 100 : 0;
 
-  chart.setOption({
+  const option = {
     animation: false,
     grid: { left: 56, right: 52, top: 32, bottom: 64 },
     tooltip: {
@@ -67,7 +69,7 @@ export function initTrend(container: HTMLElement, rows: MonthlyRow[]): ChartCtl 
         name: '元',
         nameTextStyle: { color: '#94a3b8' },
         splitLine: { lineStyle: { color: '#eef2f7' } },
-        axisLabel: { color: '#94a3b8' },
+        axisLabel: { color: '#94a3b8', formatter: (v: number) => axisMoney(v) },
       },
       {
         type: 'value',
@@ -112,6 +114,7 @@ export function initTrend(container: HTMLElement, rows: MonthlyRow[]): ChartCtl 
         itemStyle: { color: '#f59e0b' },
       },
     ],
-  });
-  return { resize: () => chart.resize() };
+  };
+  chart.setOption(option);
+  return { resize: () => chart.resize(), render: () => chart.setOption(option) };
 }

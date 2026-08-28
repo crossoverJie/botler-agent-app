@@ -1,13 +1,14 @@
 import './style.css';
 import { records } from './data';
-import { state, setState, subscribe, type View, type TypeFilter } from './state';
+import { state, setState, setMasked, subscribe, type View, type TypeFilter } from './state';
 import { h } from './utils/dom';
 import { renderSummary } from './components/summary';
 import { renderDetail } from './components/detail';
 import { renderEmpty } from './components/empty';
-import { initCharts, resizeCharts } from './charts';
+import { initCharts, resizeCharts, updateCharts } from './charts';
 import { computeAggregates } from './utils/aggregate';
-import { closeDrawer, isDrawerOpen } from './components/drawer';
+import { closeDrawer, isDrawerOpen, refreshDrawer } from './components/drawer';
+import { icon } from './icons';
 
 const agg = computeAggregates(records);
 
@@ -83,7 +84,15 @@ function buildShell(): void {
     typeFilter.append(btn);
   }
 
-  const toolbar = h('div', { class: 'toolbar' }, [search, typeFilter]);
+  // 一键屏蔽金额按钮(视觉脱敏,持久化到 localStorage)
+  const maskBtn = h('button', {
+    class: 'mask-btn' + (state.masked ? ' active' : ''),
+    title: state.masked ? '显示金额' : '屏蔽金额',
+    dataset: { mask: '1' },
+    onclick: () => toggleMask(maskBtn),
+  }, [h('span', { class: 'mask-ico', html: icon(state.masked ? 'eyeOff' : 'eye') }), h('span', { class: 'mask-label' }, [state.masked ? '金额已隐藏' : '屏蔽金额'])]);
+
+  const toolbar = h('div', { class: 'toolbar' }, [search, typeFilter, maskBtn]);
 
   const tabs = h('div', { class: 'tabs' });
   for (const t of TABS) {
@@ -108,6 +117,20 @@ function buildShell(): void {
   // 一次性构建汇总(静态):KPI + 图表
   renderSummary(kpiHost, agg);
   initCharts(chartsHost, agg);
+}
+
+function toggleMask(btn: HTMLElement): void {
+  const next = !state.masked;
+  setMasked(next);
+  btn.classList.toggle('active', next);
+  btn.title = next ? '显示金额' : '屏蔽金额';
+  (btn.querySelector('.mask-ico') as HTMLElement).innerHTML = icon(next ? 'eyeOff' : 'eye');
+  (btn.querySelector('.mask-label') as HTMLElement).textContent = next ? '金额已隐藏' : '屏蔽金额';
+  // 金额展示层随开关刷新:KPI 卡片 / 明细 / 图表 / 抽屉
+  renderSummary(kpiHost, agg);
+  if (state.view !== 'summary') renderDetail(detailHost);
+  updateCharts();
+  refreshDrawer();
 }
 
 function main(): void {
