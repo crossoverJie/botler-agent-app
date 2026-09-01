@@ -25,6 +25,22 @@ function row(label: string, value: string): HTMLElement {
   ]);
 }
 
+/** details 扩展字段的中文展示名(未登记的 key 原样显示)。 */
+const DETAIL_LABEL: Record<string, string> = {
+  holder: '投保人',
+  insured: '被保险人',
+  beneficiary: '受益人',
+  product: '险种',
+  policy_no: '保单号',
+  installment: '期数',
+};
+
+function detailRows(d: Record<string, string | number | boolean | string[]>): HTMLElement[] {
+  return Object.entries(d).map(([k, v]) =>
+    row(DETAIL_LABEL[k] || k, Array.isArray(v) ? v.join('  ') : String(v)),
+  );
+}
+
 export function openDrawer(r: LedgerRecord): void {
   ensureDom();
   current = r;
@@ -40,6 +56,7 @@ export function openDrawer(r: LedgerRecord): void {
       row('交易对象', r.payee || '—'),
       row('标签', (r.tags || []).join('  ') || '—'),
       row('备注', r.note || '—'),
+      ...(r.details ? detailRows(r.details) : []),
       r.created_at ? row('创建时间', r.created_at) : document.createTextNode(''),
     );
   }

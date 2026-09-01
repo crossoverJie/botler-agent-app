@@ -69,7 +69,6 @@ def read_json(path, required=True):
 def merge_days():
     """读取 data/days/*.json 合并为事件数组(只读)。文件名必须是 日期.json 且与内部 date 一致。"""
     files = sorted(glob.glob(os.path.join(DAYS_DIR, "*.json")))
-    files = [f for f in files if not f.endswith(".sample.json")]
     events = []
     if not files:
         warn("data/days/ 为空(新项目首次运行属正常;若有历史数据被清空,请用 git 恢复)。")

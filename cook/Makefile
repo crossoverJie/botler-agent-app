@@ -6,7 +6,7 @@ sync:
 	git pull                            # 构建前先拉取最新代码
 
 data: sync
-	python3 scripts/build.py            # 先刷新 data/ledger.json(合并/校验/聚合)
+	python3 scripts/build.py --no-web   # 刷新/校验 data/（不触发 web 构建）
 
 web: data
 	@if [ ! -d web/node_modules ]; then echo "==> npm ci(首次)"; cd web && npm ci; fi

@@ -372,6 +372,88 @@ th {
   margin-top: 6px;
 }
 
+/* ---------- Insurance ---------- */
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.policy-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.policy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.policy-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.policy-amt {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e0563a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.policy-meta {
+  display: flex;
+  flex-direction: column;
+}
+.policy-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.policy-k {
+  color: var(--muted);
+  min-width: 72px;
+  flex-shrink: 0;
+}
+.policy-v {
+  font-weight: 500;
+  word-break: break-all;
+}
+.policy-progress {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.progress-track {
+  height: 8px;
+  background: #eef2f7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: 999px;
+}
+.dim-table {
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
+
 /* ---------- Drawer ---------- */
 .drawer-backdrop {
   position: fixed;

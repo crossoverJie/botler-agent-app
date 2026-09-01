@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build nutrition visualization from data/intake.json.
 
-- Injects data into nutrition.html (self-contained, double-click to open).
 - Regenerates the "每日实际摄入记录" table inside each weekly-*.md.
 - Best-effort rebuilds the web calendar dashboard (cd web && npm run build)
   so it also picks up the latest data (skipped if Node/npm is absent).
@@ -28,7 +27,6 @@ DAYS_DIR = os.path.join(ROOT, "data", "days")
 DATA = os.path.join(ROOT, "data", "intake.json")
 FOODS = os.path.join(ROOT, "data", "foods.json")
 CFG = os.path.join(ROOT, "data", "config.json")
-HTML = os.path.join(ROOT, "nutrition.html")
 WEEKLY_DIR = os.path.join(ROOT, "weekly")
 WEB_DIR = os.path.join(ROOT, "web")
 TOLERANCE = 0.5
@@ -60,7 +58,6 @@ def merge_days():
     data/days/ 是唯一真相源；data/intake.json 只是 build.py 生成的聚合产物。
     """
     files = sorted(glob.glob(os.path.join(DAYS_DIR, "*.json")))
-    files = [f for f in files if not f.endswith(".sample.json")]
     if not files:
         fail("data/days/ 为空——请先完成迁移，拒绝生成空聚合以保护历史。")
     data = []
@@ -245,27 +242,6 @@ def write_file(path, content, dry_run=False):
         f.write(content)
 
 
-def inject_html(data, cfg, dry_run=False):
-    if not os.path.exists(HTML):
-        warn(f"未找到 {HTML}，跳过 nutrition.html 注入（该模板可选；放入带 __DATA__/__CONFIG__ 标记的 nutrition.html 即可启用）。")
-        return
-    with open(HTML, encoding="utf-8") as f:
-        html = f.read()
-    data_block = "const DATA = " + json.dumps(data, ensure_ascii=False, indent=2) + ";"
-    cfg_block = "const CONFIG = " + json.dumps(cfg, ensure_ascii=False, indent=2) + ";"
-    new_html, n1 = re.subn(
-        r"/\*__DATA_START__\*/.*?/\*__DATA_END__\*/",
-        "/*__DATA_START__*/\n" + data_block + "\n/*__DATA_END__*/",
-        html, flags=re.S)
-    new_html, n2 = re.subn(
-        r"/\*__CONFIG_START__\*/.*?/\*__CONFIG_END__\*/",
-        "/*__CONFIG_START__*/\n" + cfg_block + "\n/*__CONFIG_END__*/",
-        new_html, flags=re.S)
-    if n1 == 0 or n2 == 0:
-        fail("nutrition.html 缺少 __DATA__ 或 __CONFIG__ 注入标记，已跳过写入以避免静默无改动。")
-    write_file(HTML, new_html, dry_run=dry_run)
-
-
 def update_weekly(data, cfg, dry_run=False):
     tdee = cfg.get("tdee", 2400)
     files = sorted(glob.glob(os.path.join(WEEKLY_DIR, "weekly-*.md")))
@@ -326,7 +302,7 @@ def build_web(dry_run=False, skip=False):
     """尽力而为地重新构建 web 日历仪表盘（cd web && npm run build）。
 
     非阻断：缺少 web/ 或 npm 时仅告警跳过；构建失败也仅告警，不中断
-    核心的 Python 流水线（校验 + nutrition.html + 周报）。
+    核心的 Python 流水线（校验 + 周报）。
     """
     if skip:
         return
@@ -375,11 +351,10 @@ def main():
     validate_targets(data, cfg)
 
     write_intake(data, dry_run=args.dry_run)
-    inject_html(data, cfg, dry_run=args.dry_run)
     n = update_weekly(data, cfg, dry_run=args.dry_run)
     build_web(dry_run=args.dry_run, skip=args.no_web)
     deploy(dry_run=args.dry_run)
-    print(f"OK: {len(data)} 条记录 -> nutrition.html {'将' if args.dry_run else '已'}刷新；{n} 个周报{'将' if args.dry_run else '已'}同步。")
+    print(f"OK: {len(data)} 条记录；{n} 个周报{'将' if args.dry_run else '已'}同步。")
 
 
 if __name__ == "__main__":

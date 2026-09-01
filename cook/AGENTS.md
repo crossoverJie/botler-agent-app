@@ -6,12 +6,12 @@ This file provides guidance to AI coding assistants (CodeBuddy Code, Claude Code
 
 ## What this project is
 
-A personal nutrition/meal-plan tracking system for a 69kg male cutting from ~16% to ~12% body fat (TDEE≈2400 kcal). The pipeline turns structured food data into (1) a self-contained `nutrition.html` dashboard and (2) auto-generated daily-intake tables inside weekly Markdown reports. No external dependencies — Python 3 stdlib only.
+A personal nutrition/meal-plan tracking system for a 69kg male cutting from ~16% to ~12% body fat (TDEE≈2400 kcal). The pipeline turns structured food data into auto-generated daily-intake tables inside weekly Markdown reports and a web calendar dashboard. No external dependencies — Python 3 stdlib only.
 
 ## Commands
 
 ```bash
-# Validate data and regenerate ALL outputs (nutrition.html + weekly tables)
+# Validate data and regenerate ALL outputs (weekly tables + web dashboard)
 python3 scripts/build.py
 
 # Validate only, write nothing (safe to run after every data edit)
@@ -33,7 +33,7 @@ python3 -m unittest tests.test_rice.TestComputeRice.test_old_plan_breakdown   # 
 
 ## Web 日历仪表盘 (`web/`)
 
-纯前端（Vite + TypeScript + ECharts），把 `data/*.json` 只读消费、构建时打包进单文件，**数据层 `data/*.json` 原样不动、`build.py` 一字不改**。提供日 / 周 / 月 / 年四视图 + ECharts 趋势图（含 dataZoom），旧 `nutrition.html` 保留并行。
+纯前端（Vite + TypeScript + ECharts），把 `data/*.json` 只读消费、构建时打包进单文件，**数据层 `data/*.json` 原样不动、`build.py` 一字不改**。提供日 / 周 / 月 / 年四视图 + ECharts 趋势图（含 dataZoom）。
 
 ### 命令
 
@@ -86,16 +86,15 @@ data/
   foods.json     Ingredient nutrition library (per-100g style reference values).
   config.json    tdee, weightKg, targets (warning thresholds), rice block.
 scripts/
-  build.py       Central pipeline: validate -> inject HTML -> regenerate weekly tables.
+  build.py       Central pipeline: validate -> regenerate weekly tables.
   rice.py        Sole source of truth for rice raw/cooked weight math.
 tests/           unittest suites mirroring the two scripts.
 weekly/
   weekly-YYYYMMDD.md   One meal plan per week (YYYYMMDD = Monday start).
   README.md            Index of weekly reports.
-nutrition.html         Self-contained dashboard template (data injected here).
 background.md          Authoritative reference: nutrition params, meal-prep, rice formula.
 hamburger.md           Example meal-substitution write-up (referenced from weekly reports).
-web/                  Vite + TS + ECharts 日历仪表盘（新增前端，与旧 nutrition.html 并行，互不影响）。
+web/                  Vite + TS + ECharts 日历仪表盘。
   src/                TS 源码（views / components / charts / utils / state）。
   scripts/export.mjs  图片自动导出脚本（Playwright，本机 Chrome 优先）。
   dist/index.html     单文件产物（npm run build 生成，打包内联数据，可双击 file:// 打开）。
@@ -107,8 +106,8 @@ web/                  Vite + TS + ECharts 日历仪表盘（新增前端，与�
 1. `merge_days()` reads `data/days/*.json` (one file per day, filename = date), sorts by filename, and merges into a list — hard-fails on empty dir, non-object file contents, or filename/date mismatch. `write_intake()` writes the merged list back to `data/intake.json` (idempotent: skips write when semantically identical). `load()` reads `foods.json` and `config.json` and validates structure.
 2. `validate_meals()` — **hard failure** (`sys.exit(1)`) if a day's top-level `calories/protein/fat/carb/fiber` do not equal the sum of its per-meal `foods` within `TOLERANCE = 0.5`. Cross-checking each food's macros against `foods.json` is **warn-only**. `validate_water()` — **hard failure** if `waters` 存在但各条 `amount` 之和不等于顶层 `water`；有 `water` 但无 `waters` 明细则仅告警（旧格式）。
 3. `validate_targets()` — warn-only checks (per-kg protein, fat min, fiber min, calorie-deficit %) driven by `config.json` `targets`.
-4. `inject_html()` — replaces the block between `/*__DATA_START__*/ … /*__DATA_END__*/` and `/*__CONFIG_START__*/ … /*__CONFIG_END__*/` in `nutrition.html` with the JSON. If either marker pair is missing, it aborts (never silently no-ops).
-5. `update_weekly()` — for each `weekly-YYYYMMDD.md`, selects `days/` records falling in that Mon–Sun window and regenerates the table between `<!--AUTO_DAILY_START-->` / `<!--AUTO_DAILY_END-->`. Missing markers → abort.
+4. `update_weekly()` — for each `weekly-YYYYMMDD.md`, selects `days/` records falling in that Mon–Sun window and regenerates the table between `<!--AUTO_DAILY_START-->` / `<!--AUTO_DAILY_END-->`. Missing markers → abort.
+5. `build_web()` — best-effort rebuilds the web calendar dashboard (`cd web && npm run build`), skipped if `web/` or npm is absent.
 
 ### Key data shapes
 
@@ -122,10 +121,10 @@ Never hand-compute rice weights. Formula: `raw = cooked / factor` (i.e. cooked �
 
 ## Critical conventions (read before editing)
 
-- **Do not hand-edit generated output.** The `nutrition.html` data blocks, every `<!--AUTO_DAILY_START/END-->` table in `weekly/*.md`, and `data/intake.json` (aggregate of `days/`) are produced by `build.py`. To change what they show, edit `data/days/*.json` and rerun the build. Likewise, `web/dist/index.html` is generated by `npm run build` in `web/` — never edit it by hand; change `web/src/*` and rebuild.
+- **Do not hand-edit generated output.** Every `<!--AUTO_DAILY_START/END-->` table in `weekly/*.md` and `data/intake.json` (aggregate of `days/`) are produced by `build.py`. To change what they show, edit `data/days/*.json` and rerun the build. Likewise, `web/dist/index.html` is generated by `npm run build` in `web/` — never edit it by hand; change `web/src/*` and rebuild.
 - **`data/days/` is the single source of truth** (one file per day; filename = date). `intake.json` is only the generated aggregate. Weekly reports only display a 7-day slice. When a plan changes, add new day files (and a new weekly file) — do not rewrite history in old records or old weekly reports.
 - **读数据只读 `data/days/*.json`，绝不读 `data/intake.json`。** 聚合文件把全部历史内联成一个大数组，直接读会浪费大量 token；查某天就 open 对应日期文件，查汇总就用 grep 扫 `days/`。`intake.json` 只由 `build.py` 生成、由 web 构建时（`npm run build`）内联消费，Agent 不需要读它。
-- **改 `days/` 后必跑 `build.py`，不得询问用户**：`intake.json` / nutrition.html / weekly 表格 / web 产物都由它刷新（`write_intake` 幂等，语义一致会跳过写，但聚合可能过期，靠约定强制）。任何对 `data/` 下数据文件的写操作完成后，必须立即用 `run` 工具执行 `scripts/build.py`（先 `--dry-run` 校验通过后直接跑正式构建），并在回复中汇报刷新/校验结果；**不要询问用户是否执行**，也不要只做 dry-run 就结束。build.py 末尾会自动部署到 index 展示站并打印 `DEPLOY_OK <链接>`（见「部署到 index 展示站」），回复末尾须原样附上该链接。
+- **改 `days/` 后必跑 `build.py`，不得询问用户**：`intake.json` / weekly 表格 / web 产物都由它刷新（`write_intake` 幂等，语义一致会跳过写，但聚合可能过期，靠约定强制）。任何对 `data/` 下数据文件的写操作完成后，必须立即用 `run` 工具执行 `scripts/build.py`（先 `--dry-run` 校验通过后直接跑正式构建），并在回复中汇报刷新/校验结果；**不要询问用户是否执行**，也不要只做 dry-run 就结束。build.py 末尾会自动部署到 index 展示站并打印 `DEPLOY_OK <链接>`（见「部署到 index 展示站」），回复末尾须原样附上该链接。
 
 - **记录后附一句话轻提醒（由大模型生成，非固定模板）**：每次成功写入当天饮食/饮水、跑完 `build.py` 后，在汇报「本餐/本次热量 + 今日累计」之外，另用**一句话**对今日摄入做轻提醒。**做法**：读 `data/config.json` 的 `targets` 阈值，对照你刚算出的今日 `calories/protein/fat/carb/fiber/water` 顶层 totals，挑**最值得说的一件事**自然地提醒一句——热量接近/达到 `tdee`（默认即上限，无需额外字段）就说「后面差不多了，别再吃了」；碳水/脂肪/饮水超上限就说「今天 XX 有点超，控制点」；蛋白/纤维/碳水不足就说「XX 还差些，补点 XX」；全部达标就给一句简短鼓励。**约束**：一句话、口语、像朋友随口提醒、**每次措辞可以不同**、不罗列多条、不分行。只读今天 `days/YYYY-MM-DD.json` 与 `config.json`，不读 `intake.json`、不读历史，token 可控。
 - **Plan changes = new weekly file.** Create a new `weekly-YYYYMMDD.md` for a revised plan rather than rewriting an old one; the old report and its intake records are history.
@@ -134,7 +133,7 @@ Never hand-compute rice weights. Formula: `raw = cooked / factor` (i.e. cooked �
 - **鸡蛋默认记蛋白。** 用户提到「鸡蛋」但未显式说「全蛋/带蛋黄」时，录入 `data/days/` 一律按 `鸡蛋清`（`foods.json` 中 33g/个、17kcal/个）处理；仅当显式说「全蛋」时才用 `鸡蛋(全蛋)`（50g/个、72kcal/个）。
 - **饮水默认记「矿泉水」。** 用户提到喝水/饮水但未指明水类型时，`waters` 明细一律记 `type: "矿泉水"`；明确说了（白开水/气泡水/茶水等）才用对应类型。`water` 总量 = 各条 `amount` 之和，每次接满一壶 ≈ 830ml（用户常按一壶计）。**时段 `time`：用户说了时段（上午/下午/晚上/睡前等）就照记为对应时段文字；没说具体时段时，不标「第 N 壶」，而是先 `run` 执行 `scripts/now.py` 拿当前时间、取其 `HH:MM` 部分作为喝水时间（本地时区）。即：未指明时段 = 记录动作发生的当前时间，而非顺序号。不要尝试用 `date` 等 shell 命令取时间（run 工具只能跑 .py/.js/.mjs 脚本）。**
 - **餐次 `time` 沿用饮水约定。** `meals.<餐>.time` 取值规则与 `waters[].time` 完全一致：用户说了时段（上午/晚上/睡前等）记对应文字；没说具体时段时记**记录该餐时的当前时刻** `HH:MM`（先 `run` 执行 `scripts/now.py` 取当前时间的 `HH:MM` 部分，不要跑 `date` 命令）。web 日视图会展示该时间并按时间升序对餐次排序；**无 `time` 的历史餐次排在后面、不影响构建**。`time` 为可选字段，`validate_meals` 只读 `foods` 宏量、忽略 `time`，加入不会触发任何校验失败。
-- **Preserve the injection markers** in `nutrition.html` and the `AUTO_DAILY` comments in weekly files — `build.py` aborts if they're missing.
+- **Preserve the `AUTO_DAILY` comments** in weekly files — `build.py` aborts if they're missing.
 - **Encoding is UTF-8 throughout**; files are Chinese-language.
 
 ### 记录方式（ad-hoc / 周末摄入）

@@ -4,6 +4,7 @@ import { state, setState, setMasked, subscribe, type View, type TypeFilter } fro
 import { h } from './utils/dom';
 import { renderSummary } from './components/summary';
 import { renderDetail } from './components/detail';
+import { renderInsurance } from './components/insurance';
 import { renderEmpty } from './components/empty';
 import { initCharts, resizeCharts, updateCharts } from './charts';
 import { computeAggregates } from './utils/aggregate';
@@ -21,6 +22,7 @@ const TABS: { key: View; label: string }[] = [
   { key: 'account', label: '按账户' },
   { key: 'trip', label: '按行程' },
   { key: 'payee', label: '按交易对象' },
+  { key: 'insurance', label: '保险' },
 ];
 
 const TYPE_BTNS: { key: TypeFilter; label: string }[] = [
@@ -35,18 +37,24 @@ let kpiHost: HTMLElement;
 let chartsHost: HTMLElement;
 let detailPanel: HTMLElement;
 let detailHost: HTMLElement;
+let insurancePanel: HTMLElement;
+let insuranceHost: HTMLElement;
 const tabButtons: Partial<Record<View, HTMLElement>> = {};
 const typeButtons: Partial<Record<TypeFilter, HTMLElement>> = {};
 
 function render(): void {
   const isSummary = state.view === 'summary';
+  const isInsurance = state.view === 'insurance';
   summaryPanel.hidden = !isSummary;
-  detailPanel.hidden = isSummary;
+  detailPanel.hidden = isSummary || isInsurance;
+  insurancePanel.hidden = !isInsurance;
   for (const t of TABS) tabButtons[t.key]?.classList.toggle('active', state.view === t.key);
   for (const b of TYPE_BTNS) typeButtons[b.key]?.classList.toggle('active', state.typeFilter === b.key);
 
   if (isSummary) {
     resizeCharts();
+  } else if (isInsurance) {
+    renderInsurance(insuranceHost);
   } else {
     renderDetail(detailHost);
   }
@@ -110,9 +118,11 @@ function buildShell(): void {
   summaryPanel = h('div', { class: 'panel', id: 'panel-summary' }, [kpiHost, chartsHost]);
   detailHost = h('div', { id: 'detail' });
   detailPanel = h('div', { class: 'panel', id: 'panel-detail', hidden: true }, [detailHost]);
+  insuranceHost = h('div', { id: 'insurance' });
+  insurancePanel = h('div', { class: 'panel', id: 'panel-insurance', hidden: true }, [insuranceHost]);
 
   const header = h('header', {}, [back, brand, h('span', { class: 'src-note' }, ['single source of truth: data/days/'])]);
-  app.append(header, toolbar, tabs, summaryPanel, detailPanel);
+  app.append(header, toolbar, tabs, summaryPanel, detailPanel, insurancePanel);
 
   // 一次性构建汇总(静态):KPI + 图表
   renderSummary(kpiHost, agg);
@@ -128,7 +138,8 @@ function toggleMask(btn: HTMLElement): void {
   (btn.querySelector('.mask-label') as HTMLElement).textContent = next ? '金额已隐藏' : '屏蔽金额';
   // 金额展示层随开关刷新:KPI 卡片 / 明细 / 图表 / 抽屉
   renderSummary(kpiHost, agg);
-  if (state.view !== 'summary') renderDetail(detailHost);
+  if (state.view === 'insurance') renderInsurance(insuranceHost);
+  else if (state.view !== 'summary') renderDetail(detailHost);
   updateCharts();
   refreshDrawer();
 }

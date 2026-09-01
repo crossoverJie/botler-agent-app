@@ -613,43 +613,93 @@ body {
 }
 
 @media (max-width: 760px) {
+  #app {
+    padding: 14px 12px 40px;
+  }
+
+  /* Topbar: brand row → nav → full-width view switch → full-width export */
   .topbar {
     row-gap: 10px;
+    column-gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    margin: -14px -12px 0;
+    padding: 12px 12px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
   }
   .brand {
+    order: 1;
     font-size: 16px;
   }
+  .back-link {
+    order: 2;
+    margin-left: auto;
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
   .nav {
+    order: 3;
     flex: 1 1 100%;
+    justify-content: space-between;
   }
   .nav-label {
     flex: 1;
     min-width: 0;
   }
+  .view-switch {
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .view-btn {
+    flex: 1;
+    text-align: center;
+    padding: 10px 6px;
+    font-size: 14px;
+  }
   .export-btn {
-    margin-left: auto;
-  }
-  .cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .year-grid {
-    grid-template-columns: repeat(2, 1fr);
+    order: 5;
+    flex: 1 1 100%;
+    width: 100%;
+    height: 40px;
+    font-size: 14px;
   }
   .legend {
     display: none;
   }
+
+  /* Summary cards: 2 columns, tighter */
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .card {
+    padding: 12px;
+  }
+  .card-value {
+    font-size: 20px;
+  }
+  .card-sub {
+    font-size: 10px;
+    line-height: 1.3;
+  }
+
   .view-container {
     padding: 12px;
   }
   .trend-container {
     height: 240px;
   }
-  /* month grid: shrink cells so 7 columns stay readable */
+
+  /* Month grid: shrink cells so 7 columns stay readable */
   .month-grid {
     gap: 3px;
   }
   .cell {
-    min-height: 56px;
+    min-height: 54px;
     padding: 4px;
     border-radius: 8px;
     gap: 2px;
@@ -670,16 +720,67 @@ body {
   .dot {
     display: none;
   }
-  /* week grid: stack days vertically */
+
+  /* Week grid: stack days vertically */
   .week-grid {
     grid-template-columns: 1fr;
   }
   .week-col {
     min-height: 0;
   }
-  /* day detail: allow horizontal scroll for the food/water tables */
+  .wm-desc {
+    max-height: none;
+  }
+
+  /* Day detail */
+  .day-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px 16px;
+  }
+  .day-date {
+    font-size: 18px;
+  }
+  /* allow horizontal scroll for the wide food/water tables */
   .meal-block {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .food-table th,
+  .food-table td {
+    padding: 6px 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  /* Year grid: 2 columns */
+  .year-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .mini-month {
+    padding: 8px;
+  }
+
+  /* Drawer takes full width on phones */
+  .drawer {
+    width: 100vw;
+  }
+  .drawer-body {
+    padding: 14px;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .cell {
+    min-height: 48px;
+  }
+  .date-num {
+    font-size: 11px;
   }
 }
 

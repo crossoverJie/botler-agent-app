@@ -6,7 +6,8 @@ export type View =
   | 'payer'
   | 'account'
   | 'trip'
-  | 'payee';
+  | 'payee'
+  | 'insurance';
 
 export type TypeFilter = 'all' | 'expense' | 'income' | 'refund';
 

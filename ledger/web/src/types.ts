@@ -12,6 +12,8 @@ export interface LedgerRecord {
   payee?: string | null;
   note?: string | null;
   created_at?: string;
+  /** 领域扩展字段(字段名+类型由 data/meta.json.detailSchemas 登记、build.py 校验)。 */
+  details?: Record<string, string | number | boolean | string[]>;
 }
 
 export interface Summary {

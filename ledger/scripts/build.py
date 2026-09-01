@@ -37,6 +37,24 @@ META = os.path.join(ROOT, "data", "meta.json")
 BIG_AMOUNT_CENTS = 1000000  # single expense > ¥10000 => warning (possible extra zero)
 CURRENCY = "CNY"
 
+# details 扩展字段的合法类型(见 meta.json.detailSchemas)。
+DETAIL_TYPES = ("string", "int", "number", "bool", "string_array")
+
+
+def detail_type_ok(value, expected):
+    """校验 details 字段值是否符合 schema 声明的类型。"""
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "int":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "bool":
+        return isinstance(value, bool)
+    if expected == "string_array":
+        return isinstance(value, list) and all(isinstance(x, str) for x in value)
+    return False
+
 
 def fail(msg):
     print(f"ERROR: {msg}", file=sys.stderr)
@@ -66,7 +84,6 @@ def merge_days():
     拒绝在坏数据上生成聚合。
     """
     files = sorted(glob.glob(os.path.join(DAYS_DIR, "*.json")))
-    files = [f for f in files if not f.endswith(".sample.json")]
     records = []
     if not files:
         warn("data/days/ 为空——聚合将置空(新项目首次运行属正常;若是有历史数据被清空,请用 git 恢复)。")
@@ -89,6 +106,16 @@ def load_meta():
         fail("meta.json 缺少 categories / accounts / tags 键。")
     # payers 是可选维度:缺省视为只有「我」,老数据(无 payers 键)仍可通过校验。
     meta.setdefault("payers", ["我"])
+    # detailSchemas 可选:records 的 details 扩展字段按此登记表校验(缺省 = 不允许使用 details)。
+    meta.setdefault("detailSchemas", {})
+    if not isinstance(meta["detailSchemas"], dict):
+        fail("meta.json.detailSchemas 应为对象。")
+    for top, schema in meta["detailSchemas"].items():
+        if not isinstance(schema, dict):
+            fail(f"meta.json.detailSchemas.{top} 应为对象。")
+        for field, typ in schema.items():
+            if typ not in DETAIL_TYPES:
+                fail(f"meta.json.detailSchemas.{top}.{field} 类型 {typ!r} 不合法,应为 {sorted(DETAIL_TYPES)} 之一。")
     return meta
 
 
@@ -142,6 +169,23 @@ def validate(records, meta):
 
         if not category_exists(r.get("category"), meta):
             fail(f"{rid}:分类 {r.get('category')!r} 不在 meta.json.categories 中(严格)。")
+
+        # details 扩展字段:可选对象,字段名+类型必须登记在 meta.json.detailSchemas(按一级分类)。
+        details = r.get("details")
+        if details is not None:
+            if not isinstance(details, dict):
+                fail(f"{rid}:details 应为对象。")
+            top = r["category"][0]
+            schema = meta["detailSchemas"].get(top)
+            if schema is None:
+                fail(f"{rid}:分类 {top!r} 未在 meta.json.detailSchemas 登记,不能使用 details 扩展字段。")
+            for k, v in details.items():
+                if not isinstance(k, str) or not k:
+                    fail(f"{rid}:details 的键应为非空字符串。")
+                if k not in schema:
+                    fail(f"{rid}:details.{k} 未在 meta.json.detailSchemas.{top} 登记。")
+                if not detail_type_ok(v, schema[k]):
+                    fail(f"{rid}:details.{k} 应为 {schema[k]} 类型,实际为 {type(v).__name__}。")
 
         tags = r.get("tags") or []
         if not isinstance(tags, list):
